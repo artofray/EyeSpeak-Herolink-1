@@ -9,33 +9,68 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
         
+        :root {
+            /* Global Oasis Palette */
+            --bg-0: #050A12;
+            --bg-1: #081627;
+            --cyan: #28E7FF;
+            --cyan-2: #0AAAD4;
+            --amber: #FFB020;
+            --amber-2: #FF7A18;
+            --txt: #D8F6FF;
+            --muted: #7FB7C8;
+            --panel: rgba(10, 26, 44, 0.62);
+            --stroke: rgba(40, 231, 255, 0.28);
+            --glow: rgba(40, 231, 255, 0.55);
+            --ok: #2EFFB3;
+            --warn: #FFB020;
+            --bad: #FF4D6D;
+        }
+
         body {
             font-family: 'JetBrains Mono', monospace;
-            background: #020617;
+            background-color: var(--bg-0);
             background-image: 
-                radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%),
-                linear-gradient(rgba(15, 23, 42, 0.1) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(15, 23, 42, 0.1) 1px, transparent 1px);
-            background-size: 100% 100%, 40px 40px, 40px 40px;
-            color: #38bdf8;
+                radial-gradient(circle at 50% 50%, var(--bg-1) 0%, var(--bg-0) 100%),
+                linear-gradient(var(--stroke) 1px, transparent 1px),
+                linear-gradient(90deg, var(--stroke) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            color: var(--txt);
             overflow: hidden;
             margin: 0;
             user-select: none;
         }
 
-        .hud-glass {
-            background: rgba(15, 23, 42, 0.6);
+        .hud-panel {
+            background: var(--panel);
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(56, 189, 248, 0.2);
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5), inset 0 0 10px rgba(56, 189, 248, 0.1);
+            border: 1px solid var(--stroke);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+            position: relative;
         }
 
-        .hud-border-cyan { border: 2px solid #0ea5e9; box-shadow: 0 0 15px rgba(14, 165, 233, 0.4); }
-        .hud-border-amber { border: 2px solid #f59e0b; box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
-
         .text-hud { font-family: 'Orbitron', sans-serif; text-transform: uppercase; letter-spacing: 2px; }
+
+        .hex-btn {
+            position: relative;
+            clip-path: polygon(20% 0%, 80% 0%, 100% 50%, 80% 100%, 20% 100%, 0% 50%);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--panel);
+            border: 2px solid var(--stroke);
+        }
+
+        .hex-btn-inner {
+            position: absolute;
+            inset: 3px;
+            clip-path: polygon(20% 0%, 80% 0%, 100% 50%, 80% 100%, 20% 100%, 0% 50%);
+            background: rgba(255,255,255,0.02);
+            z-index: 1;
+        }
 
         @keyframes scanline {
             0% { transform: translateY(-100%); }
@@ -44,60 +79,44 @@
         .scanline-overlay {
             position: absolute;
             inset: 0;
-            background: linear-gradient(to bottom, transparent, rgba(56, 189, 248, 0.05) 50%, transparent);
+            background: linear-gradient(to bottom, transparent, rgba(40, 231, 255, 0.05) 50%, transparent);
             height: 100%;
             pointer-events: none;
-            animation: scanline 8s linear infinite;
+            animation: scanline 12s linear infinite;
+            z-index: 100;
         }
 
-        @keyframes charging-energy {
-          0% { transform: scale(1.05); filter: brightness(1); box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
-          50% { transform: scale(1.1); filter: brightness(1.4); box-shadow: 0 0 30px rgba(245, 158, 11, 0.7); }
-          100% { transform: scale(1.05); filter: brightness(1); box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+        @keyframes lock-flash {
+            0% { background: var(--amber); box-shadow: 0 0 50px var(--amber); }
+            100% { background: var(--panel); }
         }
-        .charging-glow {
-          animation: charging-energy 0.6s ease-in-out infinite;
-          z-index: 50;
+        .lock-in { animation: lock-flash 0.3s ease-out forwards; }
+
+        @keyframes orbit {
+            from { transform: rotate(0deg) translateX(45px) rotate(0deg); }
+            to { transform: rotate(360deg) translateX(45px) rotate(-360deg); }
+        }
+        .energy-particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: var(--cyan);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--cyan);
+            z-index: 20;
+            pointer-events: none;
         }
 
         .targeting-reticle {
-            border: 2px solid #0ea5e9;
+            border: 2px solid var(--cyan);
             border-radius: 50%;
             position: fixed;
             pointer-events: none;
-            z-index: 100;
-            transition: all 0.1s ease-out;
+            z-index: 1000;
         }
-        .reticle-inner {
-            position: absolute;
-            inset: -8px;
-            border: 2px dashed #f59e0b;
-            border-radius: 50%;
-            animation: spin 4s linear infinite;
-        }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* Button Energies */
-        .energy-btn {
-            position: relative;
-            transition: all 0.3s;
-            clip-path: polygon(10% 0, 90% 0, 100% 50%, 90% 100%, 10% 100%, 0 50%);
-        }
-        .energy-btn::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(45deg, transparent, rgba(56, 189, 248, 0.1));
-            transition: opacity 0.3s;
-        }
-        
-        /* Grid Colors */
-        .grid-c0 { border-color: #ef4444; background: rgba(239, 68, 68, 0.05); }
-        .grid-c1 { border-color: #f59e0b; background: rgba(245, 158, 11, 0.05); }
-        .grid-c2 { border-color: #10b981; background: rgba(16, 185, 129, 0.05); }
-        .grid-c3 { border-color: #0ea5e9; background: rgba(14, 165, 233, 0.05); }
-        .grid-c4 { border-color: #8b5cf6; background: rgba(139, 92, 246, 0.05); }
-        .grid-c5 { border-color: #ec4899; background: rgba(236, 72, 153, 0.05); }
+        @keyframes rotate-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .rotating { animation: rotate-slow 15s linear infinite; }
     </style>
 <script type="importmap">
 {
@@ -110,7 +129,7 @@
 }
 </script>
 </head>
-<body class="h-screen flex flex-col">
+<body class="h-screen overflow-hidden">
     <div id="root"></div>
     <script type="module" src="index.tsx"></script>
 </body>

@@ -17,36 +17,39 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: 
   return buffer;
 }
 
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const COMMON_WORDS = ["MISSION START", "HELP ME", "MORE ENERGY", "STOP MISSION", "THANK YOU", "MAGGIE", "AFFIRMATIVE", "NEGATIVE"];
-const DWELL_TIME = 1500; 
-
-const CHILD_VOICES = [
-  { id: 'Puck', label: 'Stark-Tech Alpha', gender: 'Youthful A' },
-  { id: 'Fenrir', label: 'Nova Prime Delta', gender: 'Youthful B' },
-  { id: 'Zephyr', label: 'Guardians Echo', gender: 'Youthful C' },
-  { id: 'Charon', label: 'Titan Core', gender: 'Youthful D' },
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#".split("");
+const EMOTIONS = [
+  { id: 'HUNGRY', label: 'HUNGRY', icon: '🍔', color: 'grid-amber' },
+  { id: 'THIRSTY', label: 'THIRSTY', icon: '🥤', color: 'grid-cyan' },
+  { id: 'HAPPY', label: 'HAPPY', icon: '😊', color: 'grid-green' },
+  { id: 'SAD', label: 'SAD', icon: '☹️', color: 'grid-amber' },
+  { id: 'HELP', label: 'HELP', icon: '🆘', color: 'grid-blue' },
 ];
 
-const TRACKERS = [
-  { id: 'hmd', label: 'CPU CORE', color: 'bg-yellow-400' },
-  { id: 'chest', label: 'ARC REACTOR', color: 'bg-cyan-400' },
-  { id: 'waist', label: 'POWER CELL', color: 'bg-blue-400' },
+const QUICK_WORDS = ["MOM", "DAD", "PLAY", "YES", "NO", "HI", "BYE"];
+const DWELL_TIME = 1500; 
+
+const TRACKER_LIST = [
+  { id: 'hmd', label: 'HEAD' },
+  { id: 'chest', label: 'CHEST' },
+  { id: 'waist', label: 'WAIST' },
+  { id: 'knees', label: 'KNEES' },
+  { id: 'feet', label: 'FEET' },
 ];
 
 const App = () => {
   const [isActive, setIsActive] = useState(false);
-  const [status, setStatus] = useState('SYSTEMS OFFLINE');
-  const [transcription, setTranscription] = useState('');
-  const [slimeStatus, setSlimeStatus] = useState('UNLINKED');
-  const [trackersActive, setTrackersActive] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState('READY TO HELP!');
+  const [maggieMsg, setMaggieMsg] = useState('Welcome back, Pilot! Core link stable. Ready for mission briefing?');
+  const [trackersActive, setTrackersActive] = useState<Record<string, boolean>>({
+    hmd: false, chest: false, waist: false, knees: false, feet: false
+  });
   
-  const [childVoice, setChildVoice] = useState('Puck');
-  const [showSettings, setShowSettings] = useState(false);
   const [currentWord, setCurrentWord] = useState("");
   const [gazePoint, setGazePoint] = useState({ x: 0, y: 0 });
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [dwellProgress, setDwellProgress] = useState(0);
+  const [lockInId, setLockInId] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const poseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -57,14 +60,6 @@ const App = () => {
   const faceMeshRef = useRef<any>(null);
   const dwellStartTimeRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
-
-  const letterColors = useMemo(() => {
-    return ALPHABET.map((_, i) => {
-      const row = Math.floor(i / 6);
-      const col = i % 6;
-      return `grid-c${(row + col) % 6}`;
-    });
-  }, []);
 
   useEffect(() => {
     if (typeof (window as any).Pose !== 'undefined') {
@@ -89,11 +84,10 @@ const App = () => {
     if (!ctx) return;
     ctx.clearRect(0, 0, poseCanvasRef.current.width, poseCanvasRef.current.height);
     if (results.poseLandmarks) {
-      // Draw glowing wireframe skeleton
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#0ea5e9';
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = '#0ea5e9';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#28E7FF';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = '#28E7FF';
       
       const drawLine = (from: number, to: number) => {
         const p1 = results.poseLandmarks[from];
@@ -103,15 +97,22 @@ const App = () => {
           ctx.moveTo(p1.x * poseCanvasRef.current!.width, p1.y * poseCanvasRef.current!.height);
           ctx.lineTo(p2.x * poseCanvasRef.current!.width, p2.y * poseCanvasRef.current!.height);
           ctx.stroke();
+          ctx.fillStyle = '#FFB020';
+          ctx.beginPath();
+          ctx.arc(p1.x * poseCanvasRef.current!.width, p1.y * poseCanvasRef.current!.height, 4, 0, Math.PI * 2);
+          ctx.fill();
         }
       };
 
       drawLine(11, 12); drawLine(11, 23); drawLine(12, 24); drawLine(23, 24);
+      drawLine(23, 25); drawLine(24, 26); drawLine(25, 27); drawLine(26, 28);
       
       setTrackersActive({
-        hmd: results.poseLandmarks[0].visibility > 0.5,
-        chest: results.poseLandmarks[11].visibility > 0.5,
-        waist: results.poseLandmarks[23].visibility > 0.5,
+        hmd: results.poseLandmarks[0].visibility > 0.6,
+        chest: results.poseLandmarks[11].visibility > 0.6,
+        waist: results.poseLandmarks[23].visibility > 0.6,
+        knees: (results.poseLandmarks[25].visibility > 0.5 || results.poseLandmarks[26].visibility > 0.5),
+        feet: (results.poseLandmarks[27].visibility > 0.5 || results.poseLandmarks[28].visibility > 0.5),
       });
     }
   };
@@ -146,11 +147,13 @@ const App = () => {
       setDwellProgress(0);
     } else if (targetId === focusedId && dwellStartTimeRef.current) {
       const elapsed = Date.now() - dwellStartTimeRef.current;
-      const progress = Math.min(100, (elapsed / DWELL_TIME) * 100);
+      const progress = Math.min(1, elapsed / DWELL_TIME);
       setDwellProgress(progress);
-      if (progress >= 100 && targetId !== lastSelectedIdRef.current) {
+      if (progress >= 1 && targetId !== lastSelectedIdRef.current) {
         handleSelection(targetId);
         lastSelectedIdRef.current = targetId;
+        setLockInId(targetId);
+        setTimeout(() => setLockInId(null), 300);
         setTimeout(() => { lastSelectedIdRef.current = null; }, 800);
       }
     }
@@ -160,11 +163,14 @@ const App = () => {
     if (id === 'BACKSPACE') setCurrentWord(prev => prev.slice(0, -1));
     else if (id === 'SPACE') setCurrentWord(prev => prev + " ");
     else if (id === 'CLEAR') setCurrentWord("");
-    else if (id === 'SPEAK') speakChildsVoice(currentWord);
+    else if (id === 'START_WITH_MAGGIE') startMaggie();
     else if (id.length === 1) {
       setCurrentWord(prev => prev + id);
       speakChildsVoice(id);
-    } else speakChildsVoice(id);
+    } else {
+      speakChildsVoice(id);
+      setCurrentWord(""); 
+    }
   };
 
   const speakChildsVoice = async (text: string) => {
@@ -176,7 +182,7 @@ const App = () => {
         contents: [{ parts: [{ text: text }] }],
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: childVoice } } },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
         },
       });
       const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
@@ -187,19 +193,28 @@ const App = () => {
         src.buffer = buf;
         src.connect(ctx.destination);
         src.start();
+        
+        // Deepen Maggie's Intelligence
         if (sessionRef.current) {
+          const contextPayload = {
+            selection: text,
+            activity: "Body Awareness Warmup",
+            recentSelections: currentWord.split(''),
+            pose: trackersActive,
+            timestamp: new Date().toISOString()
+          };
           sessionRef.current.sendRealtimeInput({
-            text: `[SYSTEM] The pilot just transmitted: "${text}". Mission Support, provide an encouraging tech-themed response.`
+            text: `[PILOT_SYSTEM_DATA] ${JSON.stringify(contextPayload)}. MISSION COMMANDER MAGGIE: Provide a supportive, context-aware mission response.`
           });
         }
-        if (text.length > 1 && text !== 'SPACE') setCurrentWord("");
       }
     } catch (err) {}
   };
 
   const startMaggie = async () => {
+    if (isActive) return;
     try {
-      setStatus('INITIALIZING HUD...');
+      setStatus('INITIALIZING...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { width: 640, height: 480 } });
       if (videoRef.current) videoRef.current.srcObject = stream;
 
@@ -222,9 +237,9 @@ const App = () => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
-          onopen: () => { setIsActive(true); setStatus('MISSION ACTIVE'); },
+          onopen: () => { setIsActive(true); setStatus('CORE LINK OK'); },
           onmessage: async (msg: LiveServerMessage) => {
-            if (msg.serverContent?.outputTranscription) setTranscription(msg.serverContent.outputTranscription.text);
+            if (msg.serverContent?.outputTranscription) setMaggieMsg(msg.serverContent.outputTranscription.text);
             const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audio && audioContextRef.current) {
               const ctx = audioContextRef.current;
@@ -238,182 +253,213 @@ const App = () => {
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: `You are MAGGIE (Mission Assistance & Global Guidance Integrated Entity). 
+          systemInstruction: `You are MAGGIE.AI, the Mission Assistant for EyeSpeak Herolink 1. 
           Your persona is like a friendly superhero mission commander (Stark-tech helper).
-          The user is a "Pilot" with a "Power Suit" (the SlimeVR trackers).
-          When they spell or use the console, speak in high-tech hero terms like "Excellent link, Pilot!" or "Core stability looking great!"
-          Use a warm but high-tech professional voice (Kore).`,
+          The user is a "Pilot". Respond to selections or pose updates with encouraging mission-themed language.
+          Keep responses brief, supportive, and context-aware.`,
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         }
       });
       sessionRef.current = await sessionPromise;
-    } catch (err) { setStatus('CONNECTION FAILURE'); }
+    } catch (err) { setStatus('LINK_ERROR'); }
   };
 
   return (
-    <div className="h-screen flex flex-col p-4 relative overflow-hidden">
+    <div className="h-screen w-screen p-6 flex flex-col gap-6 relative select-none">
       <div className="scanline-overlay"></div>
 
-      {/* Targeting Reticle Overlay */}
-      {isActive && (
-        <div 
-          className="targeting-reticle w-12 h-12"
-          style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transform: 'translate(-50%, -50%)' }}
-        >
-          <div className="reticle-inner"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-1 h-1 bg-amber-400 rounded-full"></div>
-          </div>
-        </div>
-      )}
+      {/* Gaze Reticle */}
+      <div 
+        className="targeting-reticle w-16 h-16 flex items-center justify-center"
+        style={{ left: `${gazePoint.x * 100}%`, top: `${gazePoint.y * 100}%`, transform: 'translate(-50%, -50%)' }}
+      >
+        <div className="absolute inset-0 border-2 border-[var(--cyan)] rounded-full rotating"></div>
+        <div className="absolute inset-2 border border-[var(--amber)] rounded-full"></div>
+        <div className="w-1 h-1 bg-white rounded-full"></div>
+      </div>
 
-      {/* HUD HEADER */}
-      <div className="flex justify-between items-center hud-glass p-4 rounded-xl border-b-2 border-sky-500/50 mb-6">
-        <div className="flex items-center gap-6">
-          <div className="text-2xl text-hud font-bold text-sky-400">EYESPEAK <span className="text-amber-500">HEROLINK 1</span></div>
-          <div className="flex gap-2">
-            <div className={`px-2 py-1 rounded text-[10px] font-bold border ${slimeStatus === 'UNLINKED' ? 'border-red-500 text-red-400' : 'border-emerald-500 text-emerald-400'}`}>{slimeStatus}</div>
-            <div className="px-2 py-1 rounded text-[10px] font-bold border border-sky-500 text-sky-400">MAGGIE_v2.5</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-           <button onClick={() => setShowSettings(true)} className="text-[10px] hud-glass px-4 py-2 rounded-md hover:bg-sky-500/20 transition text-hud">CONFIG_VOICE</button>
-           <div className="text-amber-500 text-hud text-sm animate-pulse">{status}</div>
-        </div>
+      {/* HEADER SECTION */}
+      <div className="flex justify-center items-center h-16 relative">
+         <div className="text-4xl text-hud font-black text-white drop-shadow-[0_0_15px_var(--cyan)]">
+           EYESPEAK <span className="text-[var(--amber)]">HEROLINK 1</span>
+         </div>
+         <div className="absolute left-0 bottom-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--cyan)] to-transparent opacity-50"></div>
       </div>
 
       <div className="flex-1 flex gap-6 overflow-hidden">
-        {/* LEFT HUD: Console & Spellboard */}
-        <div className="flex-[3] flex flex-col gap-6">
-          {/* Transmission Display */}
-          <div className="hud-glass rounded-2xl p-8 border-l-4 border-amber-500 relative overflow-hidden">
-             <div className="absolute top-2 right-4 text-[10px] text-amber-500/50 font-bold">OUTGOING_TRANSMISSION</div>
-             <div className="text-6xl font-bold text-sky-100 tracking-[0.2em] min-h-[1.1em] drop-shadow-[0_0_15px_rgba(56,189,248,0.5)]">
-              {currentWord || <span className="text-sky-900/40">WAITING_FOR_INPUT...</span>}
+        
+        {/* LEFT COLUMN: LIVE TRACKING & STATUS */}
+        <div className="w-1/4 flex flex-col gap-6">
+          <div className="flex-1 hud-panel rounded-lg overflow-hidden flex flex-col">
+            <div className="bg-[var(--cyan)]/10 px-4 py-1 text-[10px] font-bold border-b border-[var(--stroke)] flex justify-between items-center text-[var(--cyan)]">
+              <span>LIVE_TRACKING</span>
+              <div className="flex gap-1">
+                <div className="w-1 h-1 bg-[var(--cyan)] rounded-full animate-pulse"></div>
+                <div className="w-1 h-1 bg-[var(--cyan)] rounded-full animate-pulse delay-100"></div>
+              </div>
             </div>
-            <div className="flex gap-4 mt-6">
-              <GazeButton id="BACKSPACE" label="DEL" color="border-red-500/30" active={focusedId === 'BACKSPACE'} progress={focusedId === 'BACKSPACE' ? dwellProgress : 0} />
-              <GazeButton id="CLEAR" label="RESET" color="border-slate-500/30" active={focusedId === 'CLEAR'} progress={focusedId === 'CLEAR' ? dwellProgress : 0} />
-              <GazeButton id="SPEAK" label="TRANSMIT_VOICE 🛰️" color="hud-border-amber" active={focusedId === 'SPEAK'} progress={focusedId === 'SPEAK' ? dwellProgress : 0} className="flex-1" />
+            <div className="flex-1 relative bg-black/50">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-40 grayscale contrast-150" />
+              <canvas ref={poseCanvasRef} width="640" height="480" className="absolute inset-0 w-full h-full scale-x-[-1]" />
+              {!isActive && (
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                  <HeroButton id="START_WITH_MAGGIE" label="START MISSION" className="w-full py-6 text-sm" active={focusedId === 'START_WITH_MAGGIE'} progress={focusedId === 'START_WITH_MAGGIE' ? dwellProgress : 0} />
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Holographic Key-Pad */}
-          <div className="flex-1 grid grid-cols-10 gap-3 p-4 hud-glass rounded-3xl border-t-2 border-sky-500/20">
-            <div className="col-span-2 flex flex-col gap-2">
-              {COMMON_WORDS.slice(0, 4).map((w, i) => (
-                <GazeButton key={w} id={w} label={w} color="border-amber-500/20" active={focusedId === w} progress={focusedId === w ? dwellProgress : 0} className="flex-1 text-[10px]" />
-              ))}
-            </div>
-            <div className="col-span-6 grid grid-cols-6 gap-2">
-              {ALPHABET.map((l, i) => (
-                <GazeButton key={l} id={l} label={l} color={letterColors[i]} active={focusedId === l} progress={focusedId === l ? dwellProgress : 0} className="text-2xl font-bold" />
-              ))}
-              <GazeButton id="SPACE" label="SPACE_CORE" color="border-sky-500/20" active={focusedId === 'SPACE'} progress={focusedId === 'SPACE' ? dwellProgress : 0} className="col-span-2 text-[10px]" />
-            </div>
-            <div className="col-span-2 flex flex-col gap-2">
-              {COMMON_WORDS.slice(4).map((w, i) => (
-                <GazeButton key={w} id={w} label={w} color="border-amber-500/20" active={focusedId === w} progress={focusedId === w ? dwellProgress : 0} className="flex-1 text-[10px]" />
-              ))}
-            </div>
+          <div className="hud-panel rounded-lg p-6 flex flex-col gap-3">
+             <div className="flex items-center justify-between mb-2">
+                <span className="text-hud text-xs text-[var(--amber)]">TRACKER STATUS</span>
+                <div className="w-3 h-3 border border-[var(--cyan)] rotate-45"></div>
+             </div>
+             {TRACKER_LIST.map(t => (
+               <div key={t.id} className="flex items-center justify-between text-[10px] font-bold">
+                 <div className="flex items-center gap-2">
+                   <div className={`w-2 h-2 rounded-sm ${trackersActive[t.id] ? 'bg-[var(--ok)] animate-pulse' : 'bg-[var(--bad)]'}`}></div>
+                   <span className="text-[var(--txt)]">{t.label}</span>
+                 </div>
+                 <span className={trackersActive[t.id] ? 'text-[var(--ok)]' : 'text-[var(--bad)]'}>{trackersActive[t.id] ? 'CONNECTED' : 'OFFLINE'}</span>
+               </div>
+             ))}
           </div>
         </div>
 
-        {/* RIGHT HUD: Pilot Scan & Maggie */}
-        <div className="flex-1 flex flex-col gap-6 max-w-sm">
-          {/* Pilot Feed */}
-          <div className="hud-glass rounded-3xl overflow-hidden relative border-2 border-sky-500/30 aspect-video shadow-[0_0_50px_rgba(14,165,233,0.1)]">
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1] opacity-40 grayscale sepia brightness-150 contrast-125" />
-            <canvas ref={poseCanvasRef} width="640" height="480" className="absolute inset-0 w-full h-full scale-x-[-1]" />
-            <div className="absolute inset-0 border-[20px] border-transparent border-t-sky-500/10 border-b-sky-500/10 pointer-events-none"></div>
-            {!isActive && (
-              <div className="absolute inset-0 flex items-center justify-center bg-sky-900/80 backdrop-blur-sm">
-                <button onClick={startMaggie} className="bg-sky-500 text-white px-8 py-4 rounded-lg font-bold text-hud hud-border-cyan pulse">INIT_LINK</button>
-              </div>
-            )}
-            <div className="absolute top-2 left-2 text-[8px] font-bold text-sky-400 bg-sky-900/50 px-2 py-0.5 rounded">LIVE_PILOT_FEED_01</div>
+        {/* MIDDLE COLUMN: MAIN HUB */}
+        <div className="flex-1 flex flex-col gap-6 overflow-hidden">
+          <div className="grid grid-cols-5 gap-4 h-28">
+            {EMOTIONS.map(e => (
+              <HeroButton 
+                key={e.id} id={e.id} label={e.label} icon={e.icon}
+                className={`hex-btn flex-col`}
+                active={focusedId === e.id} progress={focusedId === e.id ? dwellProgress : 0}
+                locked={lockInId === e.id}
+              />
+            ))}
           </div>
 
-          {/* Mission Support (Maggie) */}
-          <div className="hud-glass p-6 rounded-3xl border-r-4 border-sky-500 flex-1 flex flex-col gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-sky-500 rounded-full animate-ping"></div>
-              <h3 className="text-[10px] font-bold text-sky-400 text-hud">MISSION_SUPPORT_AI</h3>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <p className="text-lg font-bold text-sky-100 leading-tight italic drop-shadow-md">
-                {transcription || "READY FOR MISSION DATA..."}
-              </p>
-            </div>
-            
-            {/* System Integrity Readout */}
-            <div className="pt-4 border-t border-sky-500/20">
-              <h4 className="text-[10px] font-bold text-amber-500 text-hud mb-3">ARMOR_INTEGRITY</h4>
-              <div className="space-y-3">
-                {TRACKERS.map(t => (
-                  <div key={t.id} className="space-y-1">
-                    <div className="flex justify-between text-[8px] font-bold">
-                      <span>{t.label}</span>
-                      <span className={trackersActive[t.id] ? 'text-emerald-400' : 'text-red-500'}>{trackersActive[t.id] ? 'ONLINE' : 'OFFLINE'}</span>
-                    </div>
-                    <div className="h-1 bg-sky-900 rounded-full overflow-hidden">
-                      <div className={`h-full transition-all duration-500 ${trackersActive[t.id] ? 'w-full ' + t.color : 'w-0'}`}></div>
-                    </div>
-                  </div>
+          <div className="flex-1 hud-panel rounded-xl p-8 flex flex-col gap-6">
+             <div className="relative h-20 bg-[var(--cyan)]/5 border border-[var(--stroke)] rounded-lg flex items-center px-8">
+               <div className="absolute -top-3 left-4 bg-[var(--bg-0)] px-2 text-[10px] text-[var(--cyan)] font-bold">TRANSMISSION_INPUT:. \</div>
+               <div className="text-4xl font-black tracking-widest text-[var(--txt)] drop-shadow-[0_0_15px_var(--cyan)] uppercase">
+                 {currentWord || <span className="text-[var(--bg-1)] animate-pulse">_</span>}
+               </div>
+               <div className="ml-auto flex gap-4">
+                 <HeroButton id="BACKSPACE" label="DEL" className="px-6 py-2 text-xs" active={focusedId === 'BACKSPACE'} progress={focusedId === 'BACKSPACE' ? dwellProgress : 0} locked={lockInId === 'BACKSPACE'} />
+               </div>
+             </div>
+
+             <div className="flex-1 grid grid-cols-10 gap-3">
+                {ALPHABET.map((letter, i) => (
+                  <HeroButton 
+                    key={letter} id={letter} label={letter}
+                    className="hex-btn text-xl font-bold"
+                    active={focusedId === letter} progress={focusedId === letter ? dwellProgress : 0}
+                    locked={lockInId === letter}
+                  />
                 ))}
-              </div>
-            </div>
+             </div>
+
+             <div className="grid grid-cols-7 gap-2 h-16">
+               {QUICK_WORDS.map(word => (
+                 <HeroButton 
+                    key={word} id={word} label={word}
+                    className="hex-btn text-[10px] font-black"
+                    active={focusedId === word} progress={focusedId === word ? dwellProgress : 0}
+                    locked={lockInId === word}
+                 />
+               ))}
+             </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: MAGGIE AI */}
+        <div className="w-1/4 flex flex-col gap-6">
+          <div className="flex-1 hud-panel rounded-lg overflow-hidden flex flex-col items-center p-6 relative">
+             <div className="tl corner-acc"></div><div className="tr corner-acc"></div>
+             <div className="bl corner-acc"></div><div className="br corner-acc"></div>
+             
+             <div className="w-48 h-48 rounded-full border-4 border-[var(--cyan)]/30 maggie-glow mb-6 relative overflow-hidden flex items-center justify-center bg-[var(--cyan)]/10 shadow-[0_0_50px_var(--cyan)]/20">
+                <div className="absolute inset-0 bg-gradient-to-t from-[var(--cyan)]/20 to-transparent"></div>
+                <div className="w-32 h-40 bg-[var(--txt)]/10 rounded-t-full relative">
+                   <div className="absolute top-8 left-4 w-4 h-4 bg-[var(--txt)] rounded-full animate-pulse shadow-[0_0_15px_#fff]"></div>
+                   <div className="absolute top-8 right-4 w-4 h-4 bg-[var(--txt)] rounded-full animate-pulse shadow-[0_0_15px_#fff]"></div>
+                   <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-8 h-1 bg-[var(--cyan-2)] rounded-full"></div>
+                </div>
+             </div>
+
+             <div className="text-hud text-xl font-black text-[var(--txt)] mb-1">MAGGIE.AI</div>
+             <div className="text-[10px] font-bold text-[var(--amber)] mb-8 uppercase tracking-widest">{status}</div>
+
+             <div className="w-full bg-[var(--cyan)]/5 border border-[var(--stroke)] p-6 rounded-2xl relative shadow-inner">
+                <div className="absolute -top-3 left-4 bg-[var(--bg-0)] px-2 text-[8px] text-[var(--cyan)] font-bold">MISSION_COMMS</div>
+                <p className="text-[var(--txt)] text-sm font-bold leading-relaxed italic opacity-90">
+                  "{maggieMsg}"
+                </p>
+             </div>
           </div>
         </div>
       </div>
 
-      {/* Voice Config Panel */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-center justify-center p-12">
-          <div className="hud-glass rounded-[2rem] p-12 max-w-2xl w-full border-2 border-amber-500 shadow-[0_0_100px_rgba(245,158,11,0.2)]">
-            <h2 className="text-3xl text-hud font-bold text-amber-500 mb-8 text-center">PILOT_VOICE_MODULATION</h2>
-            <div className="grid grid-cols-2 gap-4 mb-10">
-              {CHILD_VOICES.map(v => (
-                <button 
-                  key={v.id} 
-                  onClick={() => { setChildVoice(v.id); speakChildsVoice("Voice modulation test. Core link established."); }}
-                  className={`p-6 rounded-xl font-bold text-left transition-all border-2 ${childVoice === v.id ? 'border-amber-500 bg-amber-500/20 text-white shadow-lg' : 'border-sky-500/20 text-sky-400 hover:bg-sky-500/10'}`}
-                >
-                  <div className="text-hud text-sm">{v.label}</div>
-                  <div className="text-[10px] opacity-60 mt-2">ENCODING: {v.gender}</div>
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setShowSettings(false)} className="w-full bg-amber-600 text-white py-5 rounded-xl font-bold text-hud hover:bg-amber-500 transition">LOCK_CONFIG</button>
-          </div>
+      {/* FOOTER BAR */}
+      <div className="h-8 flex justify-between items-center text-[8px] font-black text-[var(--muted)]/50 border-t border-[var(--stroke)]">
+        <div className="flex gap-4">
+          <span>OASIS_MODULE: EyeSpeak_1</span>
+          <span>PILOT_ID: AUTHENTICATED</span>
         </div>
-      )}
+        <div className="flex gap-2 items-center">
+          <div className="w-2 h-2 rounded-full bg-[var(--ok)]"></div>
+          <span>NEURAL_LINK_STABLE</span>
+        </div>
+      </div>
     </div>
   );
 };
 
-const GazeButton = ({ id, label, color, active, progress, className = "" }: any) => {
-  const isCharging = active && progress > 0 && progress < 100;
-  
+const HeroButton = ({ id, label, icon, className = "", active, progress, locked }: any) => {
+  const glow = 0.15 + progress * 0.85;
+  const scale = 1 + progress * 0.08;
+  const charging = active && progress > 0 && progress < 1;
+
   return (
     <div 
       data-gaze-id={id}
-      className={`energy-btn hud-glass ${active ? 'hud-border-amber z-10' : 'border-sky-500/20'} ${isCharging ? 'charging-glow scale-110' : active ? 'scale-105' : ''} ${color} ${className} flex items-center justify-center text-sky-100 font-bold transition-all duration-300 h-full cursor-pointer relative overflow-hidden`}
+      className={`hex-btn ${className} ${locked ? 'lock-in' : ''}`}
+      style={{
+        transform: `scale(${locked ? 1.15 : scale})`,
+        borderColor: locked ? 'var(--amber)' : `rgba(40, 231, 255, ${0.25 + 0.45 * progress})`,
+        boxShadow: locked 
+          ? `0 0 50px var(--amber)` 
+          : `0 0 ${24 * glow}px rgba(40, 231, 255, ${0.25 + 0.55 * progress})`,
+        transition: locked ? "all 0.1s" : "transform 0.1s, box-shadow 0.1s, border-color 0.1s"
+      }}
     >
-      <span className={`relative z-20 ${active ? 'animate-pulse text-amber-400' : ''}`}>{label}</span>
+      <div className="hex-btn-inner"></div>
       
-      {active && (
+      {/* Energy Orbit Particles */}
+      {charging && (
         <>
-          {/* Orbital HUD Circles */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-30">
-            <div className={`w-16 h-16 border border-amber-500 rounded-full ${isCharging ? 'animate-ping' : ''}`}></div>
-          </div>
-          
-          {/* Fill Gauge */}
-          <div className="absolute bottom-0 left-0 h-full bg-amber-500/10 pointer-events-none transition-all ease-linear" style={{ width: `${progress}%` }}></div>
-          <div className="absolute bottom-0 left-0 h-1 bg-amber-500 shadow-[0_0_10px_#f59e0b] transition-all ease-linear" style={{ width: `${progress}%` }}></div>
+          <div className="energy-particle" style={{ animation: `orbit ${1.5 - progress}s linear infinite` }}></div>
+          <div className="energy-particle" style={{ animation: `orbit ${1.8 - progress}s linear infinite reverse`, opacity: 0.5 }}></div>
         </>
       )}
+
+      {/* Fill Energy From Bottom */}
+      {active && !locked && (
+        <div 
+          className="absolute inset-0 bg-[var(--cyan)]/10 z-0 transition-all ease-linear"
+          style={{ height: `${progress * 100}%`, top: 'auto', bottom: 0 }}
+        ></div>
+      )}
+
+      {/* Content */}
+      <div className="relative z-20 flex flex-col items-center gap-1">
+        {icon && <span className="text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">{icon}</span>}
+        <span className={`${active ? 'text-[var(--amber)] font-black' : 'text-[var(--txt)]'} transition-colors duration-200 tracking-tighter`}>
+          {label}
+        </span>
+      </div>
     </div>
   );
 };
