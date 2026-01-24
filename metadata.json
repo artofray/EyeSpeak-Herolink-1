@@ -1,0 +1,8 @@
+{
+  "description": "EyeSpeak Herolink 1 - Body Awareness & Speech Helper for Non-Verbal Children",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "name": "EyeSpeak Herolink 1"
+}
