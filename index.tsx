@@ -51,15 +51,23 @@ const App = () => {
   const [dwellProgress, setDwellProgress] = useState(0);
   const [lockInId, setLockInId] = useState<string | null>(null);
 
+  // Caregiver Chat State
+  const [showChat, setShowChat] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [isChatThinking, setIsChatThinking] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const poseCanvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
   const sessionRef = useRef<any>(null);
   const poseRef = useRef<any>(null);
   const faceMeshRef = useRef<any>(null);
   const dwellStartTimeRef = useRef<number | null>(null);
   const lastSelectedIdRef = useRef<string | null>(null);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
   useEffect(() => {
     if (typeof (window as any).Pose !== 'undefined') {
@@ -75,6 +83,9 @@ const App = () => {
       });
       faceMeshRef.current.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
       faceMeshRef.current.onResults(onFaceResults);
+    }
+    return () => {
+      if (sessionRef.current) sessionRef.current.close();
     }
   }, []);
 
@@ -164,6 +175,7 @@ const App = () => {
     else if (id === 'SPACE') setCurrentWord(prev => prev + " ");
     else if (id === 'CLEAR') setCurrentWord("");
     else if (id === 'START_WITH_MAGGIE') startMaggie();
+    else if (id === 'CAREGIVER_CHAT') setShowChat(!showChat);
     else if (id.length === 1) {
       setCurrentWord(prev => prev + id);
       speakChildsVoice(id);
@@ -194,7 +206,6 @@ const App = () => {
         src.connect(ctx.destination);
         src.start();
         
-        // Deepen Maggie's Intelligence
         if (sessionRef.current) {
           const contextPayload = {
             selection: text,
@@ -221,6 +232,7 @@ const App = () => {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      inputAudioContextRef.current = inputCtx;
       audioContextRef.current = outputCtx;
 
       const camera = new (window as any).Camera(videoRef.current, {
@@ -237,31 +249,89 @@ const App = () => {
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         callbacks: {
-          onopen: () => { setIsActive(true); setStatus('CORE LINK OK'); },
+          onopen: () => {
+            setIsActive(true); 
+            setStatus('CORE LINK OK');
+            // Stream audio from mic to Maggie
+            const source = inputCtx.createMediaStreamSource(stream);
+            const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+            scriptProcessor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const int16 = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
+              const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
+              sessionPromise.then((session) => {
+                session.sendRealtimeInput({ media: pcmBlob });
+              });
+            };
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputCtx.destination);
+          },
           onmessage: async (msg: LiveServerMessage) => {
             if (msg.serverContent?.outputTranscription) setMaggieMsg(msg.serverContent.outputTranscription.text);
+            
             const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audio && audioContextRef.current) {
               const ctx = audioContextRef.current;
               nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
               const buf = await decodeAudioData(decode(audio), ctx, 24000, 1);
-              const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+              const src = ctx.createBufferSource(); 
+              src.buffer = buf; 
+              src.connect(ctx.destination);
+              src.addEventListener('ended', () => sourcesRef.current.delete(src));
               src.start(nextStartTimeRef.current);
               nextStartTimeRef.current += buf.duration;
+              sourcesRef.current.add(src);
             }
-          }
+
+            if (msg.serverContent?.interrupted) {
+              sourcesRef.current.forEach(s => s.stop());
+              sourcesRef.current.clear();
+              nextStartTimeRef.current = 0;
+            }
+          },
+          onclose: () => { setIsActive(false); setStatus('LINK CLOSED'); }
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: `You are MAGGIE.AI, the Mission Assistant for EyeSpeak Herolink 1. 
-          Your persona is like a friendly superhero mission commander (Stark-tech helper).
-          The user is a "Pilot". Respond to selections or pose updates with encouraging mission-themed language.
-          Keep responses brief, supportive, and context-aware.`,
+          systemInstruction: `You are MAGGIE.AI, the Mission Assistant. Real-time audio interaction enabled.
+          User is "Pilot" (non-verbal autistic child). Persona: Friendly, warm, superhero mission commander.
+          Use context from pilot movements/selections to encourage communication and body awareness.`,
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } }
         }
       });
       sessionRef.current = await sessionPromise;
     } catch (err) { setStatus('LINK_ERROR'); }
+  };
+
+  const handleCaregiverChat = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim() || isChatThinking) return;
+
+    const userMsg = chatInput;
+    setChatInput("");
+    setChatHistory(prev => [...prev, {role: 'user', text: userMsg}]);
+    setIsChatThinking(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-preview",
+        contents: [...chatHistory, {role: 'user', text: userMsg}].map(h => ({
+          role: h.role === 'user' ? 'user' : 'model',
+          parts: [{text: h.text}]
+        })),
+        config: {
+          systemInstruction: "You are the Caregiver Assistance AI for EyeSpeak Herolink. Provide expert advice on autism communication, body awareness training, and mission data analysis. Be empathetic and professional.",
+          thinkingConfig: { thinkingBudget: 4000 }
+        }
+      });
+      setChatHistory(prev => [...prev, {role: 'ai', text: response.text || "No response received."}]);
+    } catch (err) {
+      setChatHistory(prev => [...prev, {role: 'ai', text: "ERROR: Failed to connect to mission intelligence."}]);
+    } finally {
+      setIsChatThinking(false);
+    }
   };
 
   return (
@@ -279,9 +349,12 @@ const App = () => {
       </div>
 
       {/* HEADER SECTION */}
-      <div className="flex justify-center items-center h-16 relative">
+      <div className="flex justify-between items-center h-16 relative px-4">
          <div className="text-4xl text-hud font-black text-white drop-shadow-[0_0_15px_var(--cyan)]">
            EYESPEAK <span className="text-[var(--amber)]">HEROLINK 1</span>
+         </div>
+         <div className="flex gap-4">
+            <HeroButton id="CAREGIVER_CHAT" label={showChat ? "CLOSE CONSOLE" : "CAREGIVER CONSOLE"} className="px-6 py-2 text-[10px]" active={focusedId === 'CAREGIVER_CHAT'} progress={focusedId === 'CAREGIVER_CHAT' ? dwellProgress : 0} />
          </div>
          <div className="absolute left-0 bottom-0 w-full h-[2px] bg-gradient-to-r from-transparent via-[var(--cyan)] to-transparent opacity-50"></div>
       </div>
@@ -339,7 +412,39 @@ const App = () => {
             ))}
           </div>
 
-          <div className="flex-1 hud-panel rounded-xl p-8 flex flex-col gap-6">
+          <div className="flex-1 hud-panel rounded-xl p-8 flex flex-col gap-6 relative overflow-hidden">
+             
+             {/* Caregiver Chat Overlay */}
+             {showChat && (
+               <div className="absolute inset-0 z-50 bg-[var(--bg-0)] p-8 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
+                 <div className="flex justify-between items-center border-b border-[var(--stroke)] pb-4">
+                   <h3 className="text-hud text-[var(--cyan)] font-black">CAREGIVER INTELLIGENCE CONSOLE</h3>
+                   <button onClick={() => setShowChat(false)} className="text-[var(--bad)] font-bold">X</button>
+                 </div>
+                 <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                    {chatHistory.length === 0 && <p className="text-[var(--muted)] text-xs italic">Awaiting caregiver input for mission analysis...</p>}
+                    {chatHistory.map((h, i) => (
+                      <div key={i} className={`flex flex-col ${h.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        <div className={`max-w-[80%] p-3 rounded-lg text-xs font-bold ${h.role === 'user' ? 'bg-[var(--cyan)]/10 text-[var(--cyan)] border border-[var(--cyan)]/30' : 'bg-[var(--amber)]/10 text-[var(--amber)] border border-[var(--amber)]/30'}`}>
+                          {h.text}
+                        </div>
+                      </div>
+                    ))}
+                    {isChatThinking && <div className="flex gap-2 items-center text-[var(--amber)] text-[10px] animate-pulse">THINKING...</div>}
+                 </div>
+                 <form onSubmit={handleCaregiverChat} className="flex gap-2">
+                   <input 
+                    type="text" 
+                    value={chatInput} 
+                    onChange={e => setChatInput(e.target.value)}
+                    placeholder="Ask mission intelligence for advice..."
+                    className="flex-1 bg-[var(--bg-1)] border border-[var(--stroke)] p-4 rounded text-[var(--txt)] text-xs focus:outline-none focus:border-[var(--cyan)]"
+                   />
+                   <HeroButton id="SEND_CHAT" label="TRANSMIT" className="px-8 py-2 text-[10px]" active={focusedId === 'SEND_CHAT'} progress={focusedId === 'SEND_CHAT' ? dwellProgress : 0} />
+                 </form>
+               </div>
+             )}
+
              <div className="relative h-20 bg-[var(--cyan)]/5 border border-[var(--stroke)] rounded-lg flex items-center px-8">
                <div className="absolute -top-3 left-4 bg-[var(--bg-0)] px-2 text-[10px] text-[var(--cyan)] font-bold">TRANSMISSION_INPUT:. \</div>
                <div className="text-4xl font-black tracking-widest text-[var(--txt)] drop-shadow-[0_0_15px_var(--cyan)] uppercase">
@@ -392,11 +497,17 @@ const App = () => {
              <div className="text-hud text-xl font-black text-[var(--txt)] mb-1">MAGGIE.AI</div>
              <div className="text-[10px] font-bold text-[var(--amber)] mb-8 uppercase tracking-widest">{status}</div>
 
-             <div className="w-full bg-[var(--cyan)]/5 border border-[var(--stroke)] p-6 rounded-2xl relative shadow-inner">
-                <div className="absolute -top-3 left-4 bg-[var(--bg-0)] px-2 text-[8px] text-[var(--cyan)] font-bold">MISSION_COMMS</div>
-                <p className="text-[var(--txt)] text-sm font-bold leading-relaxed italic opacity-90">
-                  "{maggieMsg}"
-                </p>
+             <div className="w-full bg-[var(--cyan)]/5 border border-[var(--stroke)] p-6 rounded-2xl relative shadow-inner flex-1 flex flex-col">
+                <div className="absolute -top-3 left-4 bg-[var(--bg-0)] px-2 text-[8px] text-[var(--cyan)] font-bold">MISSION_COMMS_LIVE</div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                  <p className="text-[var(--txt)] text-sm font-bold leading-relaxed italic opacity-90">
+                    "{maggieMsg}"
+                  </p>
+                </div>
+                <div className="mt-4 pt-4 border-t border-[var(--stroke)] flex gap-2 items-center">
+                   <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[var(--ok)] animate-ping' : 'bg-[var(--bad)]'}`}></div>
+                   <span className="text-[8px] font-bold text-[var(--muted)]">{isActive ? 'MIC_ACTIVE' : 'MIC_IDLE'}</span>
+                </div>
              </div>
           </div>
         </div>
@@ -425,7 +536,15 @@ const HeroButton = ({ id, label, icon, className = "", active, progress, locked 
   return (
     <div 
       data-gaze-id={id}
-      className={`hex-btn ${className} ${locked ? 'lock-in' : ''}`}
+      className={`hex-btn ${className} ${locked ? 'lock-in' : ''} cursor-pointer`}
+      onClick={(e) => {
+         // Manual click support
+         const target = e.currentTarget.closest('[data-gaze-id]');
+         if (target) {
+            const clickEvt = new CustomEvent('manualSelection', { detail: { id } });
+            window.dispatchEvent(clickEvt);
+         }
+      }}
       style={{
         transform: `scale(${locked ? 1.15 : scale})`,
         borderColor: locked ? 'var(--amber)' : `rgba(40, 231, 255, ${0.25 + 0.45 * progress})`,
