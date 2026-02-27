@@ -1,61 +1,154 @@
 # 🚀 EyeSpeak Herolink 1: Mission Control for Young Pilots
 
-Welcome to **EyeSpeak Herolink 1**, an advanced AI-powered interface designed to help non-verbal children find their voice and connect with their bodies. By turning speech practice and body awareness into a "Superhero Mission," we replace the feeling of "work" with the excitement of "play."
+An AI-powered eye-tracking communication device for non-verbal children. Turns speech practice and body awareness into a superhero mission.
+
+**Built with:** React + TypeScript + MediaPipe + Gemini Live Audio + Gemini TTS
+
+---
+
+## ✨ What's New in v2.0
+
+### Eye Tracking Improvements
+- **5-Point Gaze Calibration** — personalized gaze-to-screen mapping per child
+- **Blink Detection** — EAR (Eye Aspect Ratio) algorithm prevents false selections during blinks
+- **Adjustable Sensitivity** — configurable smoothing, head/iris sensitivity, and dwell time
+- **Face Detection Indicator** — warns when child's face is not visible
+
+### Communication Upgrades
+- **Word Prediction** — after typing 2+ letters, top-3 word suggestions appear (200-word AAC core vocabulary)
+- **Audio Feedback** — rising pitch tick sound during dwell, confirmation chime on selection
+- **Haptic Feedback** — vibration on selection (mobile/tablet)
+- **Session History** — selections persisted in localStorage for caregiver review
+
+### Architecture
+- **Decomposed from 724-line god file** into 15+ focused modules (hooks, components, utils)
+- Every file under 200 lines
+- Clean separation: tracking logic, UI components, audio, prediction
 
 ---
 
 ## 🛠 Setup & Requirements
 
-### 1. Browser Mode (PC/Mac/Tablet)
-*   **Browser**: Google Chrome or Microsoft Edge (recommended for best tracking).
-*   **Hardware**: A standard webcam and microphone.
-*   **Permissions**: When prompted, allow access to **Camera** and **Microphone**. Maggie needs these to see your child's movement and hear their progress.
+### Browser Mode (PC/Mac/Tablet)
+- **Browser**: Google Chrome or Microsoft Edge (for best eye tracking)
+- **Hardware**: Webcam + microphone
+- **Permissions**: Allow Camera and Microphone access
 
-### 2. VR Mode (Meta Quest 2/3/Pro)
-*   **Browser**: Open the **Meta Quest Browser**.
-*   **Access**: Type in the URL where this app is hosted.
-*   **Immersive Mode**: The app works in 2D within the Quest's browser, but can be viewed as a giant "holographic" screen in your VR environment.
-*   **Note**: Ensure the Quest's "Passthrough" mode is enabled if you want your child to see their real-world surroundings while using the HUD.
+### VR Mode (Meta Quest 2/3/Pro)
+- Open **Meta Quest Browser** and navigate to the app URL
+- Enable **Passthrough** mode for real-world visibility
 
 ---
 
 ## 🧠 How It Works
 
-### The Interface: "Hero HUD"
-Inspired by high-tech superhero consoles (like Iron Man), the interface uses **Eye-Gaze Tracking**. 
-*   **Targeting Reticle**: Your child just needs to **look** at a letter or word. 
-*   **System Lock (Dwell)**: Looking at a button for 1.5 seconds will "lock on" and trigger the action.
-*   **Energy Tracing**: When your child focuses, energy dots orbit the button, providing a fun visual "charging" cue.
+### Eye-Gaze Tracking
+1. **Calibration** — On first launch, child looks at 5 dots (corners + center) to personalize tracking
+2. **Targeting Reticle** — child looks at a letter or button
+3. **Dwell Selection** — holding gaze for 1.5s triggers the action (configurable)
+4. **Blink Safety** — blinks are detected and ignored to prevent accidental selections
+5. **Energy Charging** — orbit particles and rising pitch provide visual + audio feedback
 
 ### The Voices
-We distinguish between the **Teacher** and the **Child**:
-1.  **Maggie (Mission Support)**: The warm, encouraging assistant who responds to your child's actions.
-2.  **Pilot Voice (The Child)**: When your child selects a letter or word, it is spoken in a **child-like digital voice**. 
-    *   *Parent Tip*: Use the **CONFIG_VOICE** button in the header to choose a voice that best fits your child. Hearing "their" voice speak clearly helps build the neurological link to vocalization.
+- **Maggie (Mission Support)** — warm, encouraging AI assistant via Gemini Live Audio
+- **Pilot Voice (The Child)** — selected letters/words spoken in a child-appropriate voice via Gemini TTS
 
-### Body Awareness (SlimeVR)
-If you have **SlimeVR** trackers:
-*   Launch the SlimeVR server on your PC.
-*   The app will automatically attempt to link to your trackers via the local network.
-*   The "Armor Integrity" scan in the sidebar shows which parts of the "Suit" are active, encouraging your child to move their arms and legs to "power up" their hero persona.
+### Word Prediction
+After typing 2+ letters, the system suggests words from a 200-word AAC core vocabulary:
+- Type "H-E-L" → suggests "HELLO", "HELP"
+- Select a prediction to complete the word instantly
+
+### Body Awareness
+MediaPipe Pose tracks the child's body. The "Armour Integrity" panel shows which body parts are detected, encouraging movement and body awareness.
+
+### Emergency Help
+Large, easy-to-select buttons for safety situations:
+- 🛑 Bad Touch
+- 🩹 I Am Hurt
+- 🤢 I Feel Sick
+- 🗺️ I Am Lost
+
+### Caregiver Console
+Parents can open a text chat with an AI advisor for questions about:
+- Autism communication strategies
+- AAC best practices
+- Interpreting their child's selection patterns
+- Adjusting system settings
 
 ---
 
-## 📋 Quick Start Guide for Parents
+## 📋 Quick Start
 
-1.  **Open the App**: Launch in your browser of choice.
-2.  **Calibrate**: Ensure your child is centered in the camera feed. You should see a blue "holographic" skeleton appear over them—this is the **Armor Scan**.
-3.  **Wake Maggie**: Click or gaze-select the **INIT_LINK** button.
-4.  **Set the Voice**: Go to **CONFIG_VOICE** and let your child hear the different "Pilot Tones."
-5.  **Start the Mission**: Encourage your child to look at letters to spell their name or look at "MISSION START" to begin.
+```bash
+# 1. Clone
+git clone https://github.com/artofray/EyeSpeak-Herolink-1.git
+cd EyeSpeak-Herolink-1
+
+# 2. Install
+npm install
+
+# 3. Set API key
+echo "GEMINI_API_KEY=your_key_here" > .env.local
+
+# 4. Run
+npm run dev
+```
+
+Open `http://localhost:3000` in Chrome.
+
+---
+
+## 📁 Project Structure
+
+```
+src/
+├── App.tsx                     # Main app (< 280 lines)
+├── main.tsx                    # Entry point
+├── constants.ts                # Config, vocabulary, settings
+├── types.ts                    # TypeScript interfaces
+├── hooks/
+│   ├── useGazeTracking.ts      # FaceMesh + iris + blink detection
+│   ├── usePoseTracking.ts      # Body pose + skeleton drawing
+│   ├── useDwell.ts             # Dwell selection + cooldown
+│   └── useMaggieSession.ts     # Gemini Live Audio + TTS
+├── components/
+│   ├── HeroButton.tsx          # Gaze-selectable hex button
+│   ├── GazeReticle.tsx         # Targeting cursor
+│   ├── CalibrationScreen.tsx   # 5-point calibration wizard
+│   ├── WordPrediction.tsx      # Word suggestions
+│   ├── CaregiverChat.tsx       # Parent/caregiver AI chat
+│   └── HelpMenu.tsx            # Emergency help overlay
+└── utils/
+    ├── audioHelpers.ts         # PCM encode/decode, audio feedback
+    └── wordPrediction.ts       # AAC vocabulary + prediction
+```
 
 ---
 
 ## 💡 Troubleshooting
-*   **Gaze not working?** Ensure the room is well-lit and the camera is at eye level.
-*   **Tracking is slow?** Close other tabs or apps. The HUD performs heavy AI processing in real-time.
-*   **No sound?** Ensure your system volume is up and the browser tab isn't muted.
+
+- **Gaze not working?** Make sure room is well-lit, camera at eye level. Try re-calibrating.
+- **Too many false selections?** Increase dwell time in settings or reduce sensitivity.
+- **Tracking jittery?** Increase smoothing factor. Close other tabs.
+- **No sound?** Check system volume. Make sure browser tab isn't muted.
+- **"No Face Detected"?** Move the child closer to camera, ensure face is fully visible.
 
 ---
 
-**Mission Directive:** *Be patient, be loud with your praise, and have fun. Every letter spelled is a successful mission completed.*
+## 🔧 Configuration
+
+Settings in `src/constants.ts` under `DEFAULT_SETTINGS`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `dwellTime` | 1500ms | Time to hold gaze before selection |
+| `smoothingFactor` | 0.15 | Gaze smoothing (0.05=smooth, 0.4=responsive) |
+| `gazeSensitivity` | 3.5 | Iris movement multiplier |
+| `headSensitivity` | 2.5 | Head movement multiplier |
+| `blinkThreshold` | 0.2 | EAR below this = blink detected |
+| `voiceName` | Puck | Child's TTS voice |
+| `maggieVoice` | Kore | Maggie's voice |
+
+---
+
+**Mission Directive:** *Be patient, be loud with your praise, and have fun. Every letter spelled is a successful mission completed.* 🎖️
