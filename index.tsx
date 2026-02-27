@@ -29,6 +29,13 @@ const EMOTIONS = [
 const QUICK_WORDS = ["MOM", "DAD", "PLAY", "YES", "NO", "HI", "BYE"];
 const DWELL_TIME = 1500; 
 
+const HELP_OPTIONS = [
+  { id: 'HELP_TOUCH', label: 'BAD TOUCH', icon: '🛑' },
+  { id: 'HELP_HURT', label: 'I AM HURT', icon: '🩹' },
+  { id: 'HELP_SICK', label: 'I FEEL SICK', icon: '🤢' },
+  { id: 'HELP_LOST', label: 'I AM LOST', icon: '🗺️' },
+];
+
 const TRACKER_LIST = [
   { id: 'hmd', label: 'HEAD' },
   { id: 'chest', label: 'CHEST' },
@@ -57,8 +64,13 @@ const App = () => {
   const [chatHistory, setChatHistory] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   const [isChatThinking, setIsChatThinking] = useState(false);
 
+  // Help Menu State
+  const [showHelpMenu, setShowHelpMenu] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const poseCanvasRef = useRef<HTMLCanvasElement>(null);
+  const faceCanvasRef = useRef<HTMLCanvasElement>(null);
+  const smoothedGazeRef = useRef({ x: 0.5, y: 0.5 });
   const audioContextRef = useRef<AudioContext | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef(0);
@@ -131,13 +143,79 @@ const App = () => {
   const onFaceResults = (results: any) => {
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       const landmarks = results.multiFaceLandmarks[0];
+      
+      // Head tracking (Nose tip)
       const noseTip = landmarks[1];
-      const x = 1.0 - (noseTip.x - 0.5) * 4 + 0.5; 
-      const y = (noseTip.y - 0.5) * 4 + 0.5;
-      const clampedX = Math.max(0, Math.min(1, x));
-      const clampedY = Math.max(0, Math.min(1, y));
-      setGazePoint({ x: clampedX, y: clampedY });
-      checkDwell(clampedX, clampedY);
+      const headX = 1.0 - (noseTip.x - 0.5) * 2.5 + 0.5; 
+      const headY = (noseTip.y - 0.5) * 2.5 + 0.5;
+
+      // Eye tracking (Iris)
+      let gazeOffsetX = 0;
+      let gazeOffsetY = 0;
+
+      if (landmarks.length > 468) {
+        const getEyeBoundingBox = (indices: number[]) => {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const idx of indices) {
+            const p = landmarks[idx];
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+          }
+          return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+        };
+
+        const leftEyeBox = getEyeBoundingBox([33, 133, 159, 145]);
+        const rightEyeBox = getEyeBoundingBox([362, 263, 386, 374]);
+        const leftIris = landmarks[468];
+        const rightIris = landmarks[473];
+
+        const leftGazeX = 1.0 - (leftIris.x - leftEyeBox.minX) / leftEyeBox.width;
+        const leftGazeY = (leftIris.y - leftEyeBox.minY) / leftEyeBox.height;
+        const rightGazeX = 1.0 - (rightIris.x - rightEyeBox.minX) / rightEyeBox.width;
+        const rightGazeY = (rightIris.y - rightEyeBox.minY) / rightEyeBox.height;
+
+        const avgGazeX = (leftGazeX + rightGazeX) / 2;
+        const avgGazeY = (leftGazeY + rightGazeY) / 2;
+
+        gazeOffsetX = (avgGazeX - 0.5) * 3.5;
+        gazeOffsetY = (avgGazeY - 0.5) * 3.5;
+
+        // Draw eyes on canvas for visual feedback
+        if (faceCanvasRef.current) {
+          const ctx = faceCanvasRef.current.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, faceCanvasRef.current.width, faceCanvasRef.current.height);
+            ctx.fillStyle = '#FFB020';
+            ctx.beginPath();
+            ctx.arc(leftIris.x * faceCanvasRef.current.width, leftIris.y * faceCanvasRef.current.height, 3, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(rightIris.x * faceCanvasRef.current.width, rightIris.y * faceCanvasRef.current.height, 3, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+        }
+      } else if (faceCanvasRef.current) {
+        const ctx = faceCanvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, faceCanvasRef.current.width, faceCanvasRef.current.height);
+      }
+
+      let targetX = headX + gazeOffsetX;
+      let targetY = headY + gazeOffsetY;
+
+      targetX = Math.max(0, Math.min(1, targetX));
+      targetY = Math.max(0, Math.min(1, targetY));
+
+      // Smoothing
+      const smoothingFactor = 0.15;
+      const smoothedX = smoothedGazeRef.current.x + (targetX - smoothedGazeRef.current.x) * smoothingFactor;
+      const smoothedY = smoothedGazeRef.current.y + (targetY - smoothedGazeRef.current.y) * smoothingFactor;
+      
+      smoothedGazeRef.current = { x: smoothedX, y: smoothedY };
+
+      setGazePoint({ x: smoothedX, y: smoothedY });
+      checkDwell(smoothedX, smoothedY);
     }
   };
 
@@ -175,7 +253,31 @@ const App = () => {
     else if (id === 'SPACE') setCurrentWord(prev => prev + " ");
     else if (id === 'CLEAR') setCurrentWord("");
     else if (id === 'START_WITH_MAGGIE') startMaggie();
-    else if (id === 'CAREGIVER_CHAT') setShowChat(!showChat);
+    else if (id === 'CAREGIVER_CHAT') setShowChat(prev => !prev);
+    else if (id === 'SEND_CHAT') handleCaregiverChat();
+    else if (id === 'HELP') {
+      setShowHelpMenu(true);
+      speakChildsVoice("I need help.");
+    }
+    else if (id === 'CLOSE_HELP') {
+      setShowHelpMenu(false);
+    }
+    else if (id === 'HELP_TOUCH') {
+      speakChildsVoice("Someone is touching me inappropriately.");
+      setShowHelpMenu(false);
+    }
+    else if (id === 'HELP_HURT') {
+      speakChildsVoice("I am hurt.");
+      setShowHelpMenu(false);
+    }
+    else if (id === 'HELP_SICK') {
+      speakChildsVoice("I feel sick.");
+      setShowHelpMenu(false);
+    }
+    else if (id === 'HELP_LOST') {
+      speakChildsVoice("I am lost.");
+      setShowHelpMenu(false);
+    }
     else if (id.length === 1) {
       setCurrentWord(prev => prev + id);
       speakChildsVoice(id);
@@ -184,6 +286,21 @@ const App = () => {
       setCurrentWord(""); 
     }
   };
+
+  const handleSelectionRef = useRef(handleSelection);
+  useEffect(() => {
+    handleSelectionRef.current = handleSelection;
+  });
+
+  useEffect(() => {
+    const handleManualSelection = (e: any) => {
+      handleSelectionRef.current(e.detail.id);
+    };
+    window.addEventListener('manualSelection', handleManualSelection);
+    return () => {
+      window.removeEventListener('manualSelection', handleManualSelection);
+    };
+  }, []);
 
   const speakChildsVoice = async (text: string) => {
     if (!text.trim()) return;
@@ -374,6 +491,7 @@ const App = () => {
             <div className="flex-1 relative bg-black/50">
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover opacity-40 grayscale contrast-150" />
               <canvas ref={poseCanvasRef} width="640" height="480" className="absolute inset-0 w-full h-full scale-x-[-1]" />
+              <canvas ref={faceCanvasRef} width="640" height="480" className="absolute inset-0 w-full h-full scale-x-[-1]" />
               {!isActive && (
                 <div className="absolute inset-0 flex items-center justify-center p-4">
                   <HeroButton id="START_WITH_MAGGIE" label="START MISSION" className="w-full py-6 text-sm" active={focusedId === 'START_WITH_MAGGIE'} progress={focusedId === 'START_WITH_MAGGIE' ? dwellProgress : 0} />
@@ -442,6 +560,26 @@ const App = () => {
                    />
                    <HeroButton id="SEND_CHAT" label="TRANSMIT" className="px-8 py-2 text-[10px]" active={focusedId === 'SEND_CHAT'} progress={focusedId === 'SEND_CHAT' ? dwellProgress : 0} />
                  </form>
+               </div>
+             )}
+
+             {/* Help Menu Overlay */}
+             {showHelpMenu && (
+               <div className="absolute inset-0 z-40 bg-[var(--bg-0)] p-8 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
+                 <div className="flex justify-between items-center border-b border-[var(--stroke)] pb-4">
+                   <h3 className="text-hud text-[var(--bad)] font-black text-2xl">EMERGENCY HELP</h3>
+                   <HeroButton id="CLOSE_HELP" label="CLOSE" className="px-6 py-2 text-[10px]" active={focusedId === 'CLOSE_HELP'} progress={focusedId === 'CLOSE_HELP' ? dwellProgress : 0} />
+                 </div>
+                 <div className="flex-1 grid grid-cols-2 gap-6 mt-4">
+                   {HELP_OPTIONS.map(opt => (
+                     <HeroButton 
+                       key={opt.id} id={opt.id} label={opt.label} icon={opt.icon}
+                       className="hex-btn flex-col text-2xl font-black bg-[var(--bad)]/10 border-[var(--bad)]"
+                       active={focusedId === opt.id} progress={focusedId === opt.id ? dwellProgress : 0}
+                       locked={lockInId === opt.id}
+                     />
+                   ))}
+                 </div>
                </div>
              )}
 
